@@ -1,18 +1,17 @@
 (() => {
   'use strict';
 
-  let entries = [];
+  let dictionaryEntries = [];
   let entriesByWord = new Map();
-  let selectedWord = '';
-  let dictionaryReady = false;
+  let selectedDictionaryWord = '';
 
-  function normalize(value) {
+  function normalizeText(value) {
     return String(value || '')
       .trim()
       .replace(/\s+/g, ' ');
   }
 
-  function getElements() {
+  function getUi() {
     return {
       panel: document.getElementById('miniDictionaryPanel'),
       search: document.getElementById('miniDictSearch'),
@@ -25,11 +24,11 @@
     };
   }
 
-  function buildPanel() {
+  function createDictionaryPanel() {
     const oldPanel = document.querySelector('#clickMode .dictionary');
 
     if (!oldPanel) {
-      console.error('Mini dictionary panel location was not found.');
+      console.error('Mini dictionary panel was not found.');
       return false;
     }
 
@@ -47,7 +46,6 @@
               type="text"
               placeholder="단어 검색 · Search a Korean word"
               autocomplete="off"
-              inputmode="text"
             >
 
             <button
@@ -98,12 +96,15 @@
     return true;
   }
 
-  function rebuildIndex() {
+  function buildDictionaryIndex() {
     entriesByWord = new Map();
 
-    entries.forEach((entry) => {
-      const word = normalize(entry.word);
-      if (!word) return;
+    dictionaryEntries.forEach((entry) => {
+      const word = normalizeText(entry.word);
+
+      if (!word) {
+        return;
+      }
 
       if (!entriesByWord.has(word)) {
         entriesByWord.set(word, []);
@@ -113,176 +114,196 @@
     });
   }
 
-  function fallbackRoman(word) {
-    if (typeof romanizeText === 'function') {
-      return romanizeText(word);
+  function tokensToWord(tokens) {
+    if (!Array.isArray(tokens)) {
+      return '';
+    }
+
+    return tokens.map((token) => {
+      if (token.type === 'space') {
+        return ' ';
+      }
+
+      if (token.type === 'syllable' && typeof assemble === 'function') {
+        return assemble(token.cho, token.jung, token.jong || '');
+      }
+
+      return '';
+    }).join('').trim();
+  }
+
+  function getCurrentBuilderWord() {
+    try {
+      if (typeof wordTokens !== 'undefined') {
+        return tokensToWord(wordTokens);
+      }
+    } catch (error) {
+      console.warn('Could not read wordTokens:', error);
     }
 
     return '';
   }
 
-  function getCurrentBuilderWord() {
-    try {
-      if (!Array.isArray(wordTokens)) return '';
+  function displayMissingWord(word) {
+    const ui = getUi();
+    const normalizedWord = normalizeText(word);
 
-      return wordTokens
-        .map((token) => {
-          if (token.type === 'space') return ' ';
+    selectedDictionaryWord = normalizedWord;
 
-          if (
-            token.type === 'syllable' &&
-            typeof assemble === 'function'
-          ) {
-            return assemble(token.cho, token.jung, token.jong || '');
-          }
+    ui.word.textContent =
+      normalizedWord || '단어를 선택하거나 검색해 주세요.';
 
-          return '';
-        })
-        .join('')
-        .replace(/\s+/g, ' ')
-        .trim();
-    } catch (error) {
-      return '';
-    }
-  }
-
-  function showMissing(word) {
-    const el = getElements();
-    const normalized = normalize(word);
-
-    selectedWord = normalized;
-    el.word.textContent = normalized || '단어를 선택하거나 검색해 주세요.';
-    el.meaning.textContent = normalized
+    ui.meaning.textContent = normalizedWord
       ? '미니사전에 등록되지 않은 표현입니다.'
       : '';
-    el.meta.textContent = '';
-    el.roman.textContent = normalized ? fallbackRoman(normalized) : '';
-    el.note.textContent = normalized
-      ? '자세한 뜻, 예문과 발음은 외부 사전에서 확인할 수 있습니다.'
+
+    ui.meta.textContent = '';
+
+    ui.roman.textContent =
+      normalizedWord && typeof romanizeText === 'function'
+        ? romanizeText(normalizedWord)
+        : '';
+
+    ui.note.textContent = normalizedWord
+      ? '자세한 뜻과 발음은 외부 사전에서 확인할 수 있습니다.'
       : 'A1 기본 어휘 982개를 검색할 수 있습니다.';
   }
 
-  function showEntry(word) {
-    const normalized = normalize(word);
-    const el = getElements();
+  function displayDictionaryEntry(word) {
+    const ui = getUi();
+    const normalizedWord = normalizeText(word);
+    const matches = entriesByWord.get(normalizedWord) || [];
 
-    if (!dictionaryReady) {
-      selectedWord = normalized;
-      return;
-    }
+    selectedDictionaryWord = normalizedWord;
 
-    const matches = entriesByWord.get(normalized) || [];
-    selectedWord = normalized;
-
-    if (!normalized) {
-      showMissing('');
+    if (!normalizedWord) {
+      displayMissingWord('');
       return;
     }
 
     if (!matches.length) {
-      showMissing(normalized);
+      displayMissingWord(normalizedWord);
       return;
     }
 
-    const first = matches[0];
-    const meanings = [
-      ...new Set(matches.map((item) => item.meaning).filter(Boolean))
-    ];
-    const senses = [
-      ...new Set(
-        matches
-          .map((item) => {
-            const pos = item.pos_ko || item.pos || '';
-            const level = item.level || 'A1';
-            return pos ? `${pos} · ${level}` : level;
-          })
-          .filter(Boolean)
-      )
-    ];
+    const firstEntry = matches[0];
 
-    el.word.textContent = first.word;
-    el.meaning.textContent = meanings.join(' / ') || '영어 뜻 정보 없음';
-    el.meta.textContent = senses.join(' / ');
-    el.roman.textContent = first.roman || fallbackRoman(first.word);
-    el.note.textContent = matches.length > 1
-      ? `같은 표기의 품사·뜻 항목이 ${matches.length}개 있습니다. 자세한 내용은 외부 사전에서 확인하세요.`
-      : '자세한 뜻, 예문과 발음은 외부 사전에서 확인할 수 있습니다.';
+    const meanings = [...new Set(
+      matches
+        .map((entry) => normalizeText(entry.meaning))
+        .filter(Boolean)
+    )];
 
-    if (document.activeElement !== el.search) {
-      el.search.value = first.word;
+    const metaItems = [...new Set(
+      matches.map((entry) => {
+        const pos = entry.pos_ko || entry.pos || '';
+        const level = entry.level || 'A1';
+        return [pos, level].filter(Boolean).join(' · ');
+      }).filter(Boolean)
+    )];
+
+    ui.word.textContent = firstEntry.word;
+    ui.meaning.textContent = meanings.join(' / ') || '영어 뜻 정보 없음';
+    ui.meta.textContent = metaItems.join(' / ');
+
+    ui.roman.textContent =
+      firstEntry.roman ||
+      (
+        typeof romanizeText === 'function'
+          ? romanizeText(firstEntry.word)
+          : ''
+      );
+
+    ui.note.textContent =
+      matches.length > 1
+        ? `같은 표기의 항목이 ${matches.length}개 있습니다. 자세한 내용은 외부 사전에서 확인하세요.`
+        : '자세한 뜻, 예문과 발음은 외부 사전에서 확인할 수 있습니다.';
+
+    if (document.activeElement !== ui.search) {
+      ui.search.value = firstEntry.word;
     }
   }
 
-  function getSuggestions(query, limit = 8) {
-    const q = normalize(query);
-    if (!q) return [];
+  function findSuggestions(query, limit = 8) {
+    const normalizedQuery = normalizeText(query);
 
-    const starts = [];
+    if (!normalizedQuery) {
+      return [];
+    }
+
+    const beginsWith = [];
     const contains = [];
 
-    entries.forEach((entry) => {
-      if (entry.word.startsWith(q)) {
-        starts.push(entry);
-      } else if (entry.word.includes(q)) {
+    dictionaryEntries.forEach((entry) => {
+      const word = normalizeText(entry.word);
+
+      if (word.startsWith(normalizedQuery)) {
+        beginsWith.push(entry);
+      } else if (word.includes(normalizedQuery)) {
         contains.push(entry);
       }
     });
 
-    const unique = new Map();
+    const uniqueEntries = new Map();
 
-    [...starts, ...contains].forEach((entry) => {
-      if (!unique.has(entry.word)) {
-        unique.set(entry.word, entry);
+    [...beginsWith, ...contains].forEach((entry) => {
+      if (!uniqueEntries.has(entry.word)) {
+        uniqueEntries.set(entry.word, entry);
       }
     });
 
-    return [...unique.values()].slice(0, limit);
+    return [...uniqueEntries.values()].slice(0, limit);
   }
 
   function renderSuggestions(query) {
-    const el = getElements();
-    const results = getSuggestions(query);
+    const ui = getUi();
+    const results = findSuggestions(query);
 
-    el.suggestions.innerHTML = '';
+    ui.suggestions.innerHTML = '';
 
-    if (!normalize(query) || !results.length) {
-      el.suggestions.classList.remove('open');
+    if (!normalizeText(query) || !results.length) {
+      ui.suggestions.classList.remove('open');
       return;
     }
 
     results.forEach((entry) => {
       const button = document.createElement('button');
-      const word = document.createElement('strong');
-      const meaning = document.createElement('span');
-      const meta = document.createElement('small');
 
       button.type = 'button';
       button.className = 'mini-suggestion';
-      word.textContent = entry.word;
-      meaning.textContent = entry.meaning || '';
-      meta.textContent = `${entry.pos_ko || entry.pos || ''} · ${entry.level || 'A1'}`;
 
-      button.append(word, meaning, meta);
+      button.innerHTML = `
+        <strong>${entry.word}</strong>
+        <span>${entry.meaning || ''}</span>
+        <small>
+          ${entry.pos_ko || entry.pos || ''} · ${entry.level || 'A1'}
+        </small>
+      `;
 
       button.addEventListener('click', () => {
-        el.search.value = entry.word;
-        el.suggestions.classList.remove('open');
-        showEntry(entry.word);
+        ui.search.value = entry.word;
+        ui.suggestions.classList.remove('open');
+        displayDictionaryEntry(entry.word);
       });
 
-      el.suggestions.appendChild(button);
+      ui.suggestions.appendChild(button);
     });
 
-    el.suggestions.classList.add('open');
+    ui.suggestions.classList.add('open');
   }
 
-  function setBuilderWord(word) {
-    const normalized = normalize(word);
+  function sendWordToBuilder(word) {
+    const normalizedWord = normalizeText(word);
 
-    if (!normalized || typeof decompose !== 'function') return;
+    if (!normalizedWord || typeof decompose !== 'function') {
+      return;
+    }
 
-    const newTokens = decompose(normalized);
-    if (!newTokens.length) return;
+    const newTokens = decompose(normalizedWord);
+
+    if (!newTokens.length) {
+      return;
+    }
 
     try {
       wordTokens = newTokens;
@@ -293,36 +314,48 @@
       wordSlot = 'con';
       edited = true;
       loadedPreset = '';
+
+      const clickModeElement = document.getElementById('clickMode');
+      const typeModeElement = document.getElementById('typeMode');
+
+      document.querySelectorAll('.mode-btn').forEach((button) => {
+        button.classList.toggle(
+          'active',
+          button.dataset.mode === 'click'
+        );
+      });
+
+      if (clickModeElement) {
+        clickModeElement.style.display = 'block';
+      }
+
+      if (typeModeElement) {
+        typeModeElement.classList.remove('active');
+      }
+
+      if (typeof renderWord === 'function') {
+        renderWord();
+      }
+
+      if (clickModeElement) {
+        clickModeElement.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start'
+        });
+      }
     } catch (error) {
-      console.error('Word Builder state could not be updated.', error);
-      return;
+      console.error('Could not send the word to the card builder:', error);
     }
-
-    document.querySelectorAll('.mode-btn').forEach((button) => {
-      button.classList.toggle('active', button.dataset.mode === 'click');
-    });
-
-    const clickPanel = document.getElementById('clickMode');
-    const typePanel = document.getElementById('typeMode');
-
-    if (clickPanel) clickPanel.style.display = 'block';
-    if (typePanel) typePanel.classList.remove('active');
-
-    if (typeof renderWord === 'function') {
-      renderWord();
-    }
-
-    clickPanel?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start'
-    });
   }
 
-  function openExternal(buttonId) {
-    const el = getElements();
-    const word = normalize(
-      el.search.value || selectedWord || getCurrentBuilderWord()
+  function openExternalDictionary(buttonId) {
+    const ui = getUi();
+    const word = normalizeText(
+      ui.search.value ||
+      selectedDictionaryWord ||
+      getCurrentBuilderWord()
     );
+
     const externalInput = document.getElementById('externalDictInput');
 
     if (externalInput) {
@@ -332,81 +365,77 @@
     document.getElementById(buttonId)?.click();
   }
 
-  function setupControls() {
-    const el = getElements();
+  function setupDictionaryControls() {
+    const ui = getUi();
 
-    el.search.addEventListener('input', () => {
-      renderSuggestions(el.search.value);
+    ui.search.addEventListener('input', () => {
+      renderSuggestions(ui.search.value);
     });
 
-    el.search.addEventListener('focus', () => {
-      renderSuggestions(el.search.value);
+    ui.search.addEventListener('focus', () => {
+      renderSuggestions(ui.search.value);
     });
 
-    el.search.addEventListener('keydown', (event) => {
+    ui.search.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
-        showEntry(el.search.value);
-        el.suggestions.classList.remove('open');
+        displayDictionaryEntry(ui.search.value);
+        ui.suggestions.classList.remove('open');
       }
 
       if (event.key === 'Escape') {
-        el.suggestions.classList.remove('open');
+        ui.suggestions.classList.remove('open');
       }
     });
 
     document
       .getElementById('miniDictSearchButton')
       ?.addEventListener('click', () => {
-        showEntry(el.search.value);
-        el.suggestions.classList.remove('open');
+        displayDictionaryEntry(ui.search.value);
+        ui.suggestions.classList.remove('open');
       });
 
     document
       .getElementById('miniSendToBuilder')
       ?.addEventListener('click', () => {
-        setBuilderWord(el.search.value || selectedWord);
+        sendWordToBuilder(ui.search.value || selectedDictionaryWord);
       });
 
     document
       .getElementById('miniOpenKrdict')
       ?.addEventListener('click', () => {
-        openExternal('openKrdict');
+        openExternalDictionary('openKrdict');
       });
 
     document
       .getElementById('miniOpenNaver')
       ?.addEventListener('click', () => {
-        openExternal('openNaverDict');
+        openExternalDictionary('openNaverDict');
       });
 
     document.addEventListener('click', (event) => {
       if (!event.target.closest('.mini-search-wrap')) {
-        el.suggestions.classList.remove('open');
+        ui.suggestions.classList.remove('open');
       }
     });
   }
 
-  function connectWordBuilder() {
-    if (typeof renderWord !== 'function') return;
+  function connectToWordBuilder() {
+    if (typeof renderWord !== 'function') {
+      return;
+    }
 
     const originalRenderWord = renderWord;
 
     renderWord = function (...args) {
       const result = originalRenderWord.apply(this, args);
-      showEntry(getCurrentBuilderWord());
+      displayDictionaryEntry(getCurrentBuilderWord());
       return result;
     };
-
-    document.getElementById('sendToBuilder')?.addEventListener('click', () => {
-      window.setTimeout(() => {
-        showEntry(getCurrentBuilderWord());
-      }, 0);
-    });
   }
 
-  async function loadDictionary() {
-    const el = getElements();
+  async function loadMiniDictionary() {
+    const ui = getUi();
 
     try {
       const response = await fetch('./mini_dictionary.json', {
@@ -418,30 +447,36 @@
       }
 
       const data = await response.json();
-      entries = Array.isArray(data) ? data : (data.entries || []);
-      rebuildIndex();
-      dictionaryReady = true;
 
-      const currentWord = getCurrentBuilderWord() || selectedWord || '안녕하세요';
-      showEntry(currentWord);
+      dictionaryEntries = Array.isArray(data)
+        ? data
+        : (data.entries || []);
+
+      buildDictionaryIndex();
+
+      const initialWord = getCurrentBuilderWord() || '안녕하세요';
+      displayDictionaryEntry(initialWord);
     } catch (error) {
       console.error('Mini dictionary load failed:', error);
-      el.word.textContent = '미니사전을 불러오지 못했습니다.';
-      el.meaning.textContent = '';
-      el.meta.textContent = '';
-      el.roman.textContent = '';
-      el.note.textContent =
+
+      ui.word.textContent = '미니사전을 불러오지 못했습니다.';
+      ui.meaning.textContent = '';
+      ui.meta.textContent = '';
+      ui.roman.textContent = '';
+      ui.note.textContent =
         'mini_dictionary.json이 index.html과 같은 위치에 있는지 확인해 주세요.';
     }
   }
 
-  function init() {
-    if (!buildPanel()) return;
+  function initializeMiniDictionary() {
+    if (!createDictionaryPanel()) {
+      return;
+    }
 
-    setupControls();
-    connectWordBuilder();
-    loadDictionary();
+    setupDictionaryControls();
+    connectToWordBuilder();
+    loadMiniDictionary();
   }
 
-  init();
+  initializeMiniDictionary();
 })();
