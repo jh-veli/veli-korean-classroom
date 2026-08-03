@@ -1,6 +1,6 @@
 const DICTIONARY_URLS = {
   krdictHome:
-    'https://krdict.korean.go.kr/eng/',
+    'https://krdict.korean.go.kr/eng/mainAction',
 
   naverHome:
     'https://ko.dict.naver.com/',
@@ -74,12 +74,18 @@ document.addEventListener(
       }
     }
 
-    function openTab(url) {
-      return window.open(
-        url,
-        '_blank',
-        'noopener,noreferrer'
-      );
+    function openDictionary(url) {
+      const link =
+        document.createElement('a');
+
+      link.href = url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+
+      document.body.appendChild(link);
+
+      link.click();
+      link.remove();
     }
 
     krdictButton?.addEventListener(
@@ -90,26 +96,19 @@ document.addEventListener(
         const copied =
           await copyWord(word);
 
-        const tab =
-          openTab(
-            DICTIONARY_URLS.krdictHome
-          );
-
-        if (!tab) {
-          status.textContent =
-            '새 탭이 차단되었습니다. 브라우저의 팝업 허용 설정을 확인해 주세요.';
-
-          return;
-        }
+        openDictionary(
+          DICTIONARY_URLS.krdictHome
+        );
 
         if (word && copied) {
           status.textContent =
-            `“${word}”를 복사하고 한국어기초사전을 열었습니다. ` +
-            '새 탭의 검색창에 붙여넣어 주세요.';
+            `“${word}”를 복사하고 ` +
+            '한국어기초사전을 새 탭으로 열었습니다. ' +
+            '새 탭 검색창에 붙여넣어 주세요.';
         } else if (word) {
           status.textContent =
-            `한국어기초사전을 열었습니다. ` +
-            `새 탭의 검색창에 “${word}”를 입력해 주세요.`;
+            '한국어기초사전을 새 탭으로 열었습니다. ' +
+            `검색창에 “${word}”를 입력해 주세요.`;
         } else {
           status.textContent =
             '한국어기초사전을 새 탭으로 열었습니다.';
@@ -129,19 +128,11 @@ document.addEventListener(
             : DICTIONARY_URLS
                 .naverHome;
 
-        const tab =
-          openTab(url);
-
-        if (!tab) {
-          status.textContent =
-            '새 탭이 차단되었습니다. 브라우저의 팝업 허용 설정을 확인해 주세요.';
-
-          return;
-        }
+        openDictionary(url);
 
         status.textContent =
           word
-            ? `네이버 국어사전에서 “${word}” 검색 결과를 열었습니다.`
+            ? `네이버 국어사전에서 “${word}” 검색 결과를 새 탭으로 열었습니다.`
             : '네이버 국어사전을 새 탭으로 열었습니다.';
       }
     );
